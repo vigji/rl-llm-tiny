@@ -27,14 +27,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max_steps", type=int, default=300)
     ap.add_argument("--num_generations", type=int, default=8)
-    ap.add_argument("--per_device_batch", type=int, default=4)
-    ap.add_argument("--lr", type=float, default=1e-6)
+    # In TRL GRPO, per_device_train_batch_size is the total number of
+    # generations per step, not prompts. Must be divisible by num_generations.
+    # 32 = 4 unique prompts × 8 group completions per step.
+    ap.add_argument("--per_device_batch", type=int, default=32)
+    ap.add_argument("--lr", type=float, default=5e-6)
+    ap.add_argument("--warmup_steps", type=int, default=20)
+    ap.add_argument("--lr_scheduler_type", default="cosine")
     ap.add_argument("--beta", type=float, default=0.04)
     ap.add_argument("--max_completion_length", type=int, default=128)
+    ap.add_argument("--format_weight", type=float, default=5.0,
+                    help="Multiplier on format reward (raw fn returns 0.1, weight 5.0 => max=0.5).")
     ap.add_argument("--logging_steps", type=int, default=5)
     ap.add_argument("--save_steps", type=int, default=100)
     ap.add_argument("--n_train", type=int, default=2000)
-    ap.add_argument("--run_name", default="grpo-qwen-add")
+    ap.add_argument("--run_name", default="grpo-qwen-add-v2")
     args = ap.parse_args()
 
     out_dir = Path("runs") / args.run_name
@@ -71,7 +78,8 @@ def main():
         per_device_train_batch_size=args.per_device_batch,
         gradient_accumulation_steps=1,
         learning_rate=args.lr,
-        warmup_steps=10,
+        warmup_steps=args.warmup_steps,
+        lr_scheduler_type=args.lr_scheduler_type,
         max_grad_norm=1.0,
         bf16=device_dtype == torch.bfloat16,
         logging_steps=args.logging_steps,
@@ -85,7 +93,7 @@ def main():
         beta=args.beta,
         num_iterations=1,
         scale_rewards=True,
-        reward_weights=[1.0, 1.0],  # correctness, format
+        reward_weights=[1.0, args.format_weight],  # correctness, format
         use_vllm=False,
     )
 
